@@ -1,0 +1,72 @@
+.featureGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.featureCard {
+  background-color: #232841;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid #232841;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.featureCard:hover {
+  transform: scale(1.02);
+  border-color: rgba(93, 79, 255, 0.2);
+}
+
+.iconContainer {
+  background-color: #1A1F30;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif !important;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.connectButton {
+  padding: 0.75rem 2rem;
+  background: linear-gradient(to right, #FF7361, #FFC452);
+  color: black;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: inline-block;
+}
+
+.primaryButton {
+  padding: 0.75rem 2rem;
+  background: linear-gradient(to right, #5D4FFF, #483CBB);
+  color: white;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: inline-block;
+}
+
+@media (min-width: 640px) {
+  .featureGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .stepsContainer {
+    flex-direction: row;
+  }
+  
+  .stepItem {
+    width: 33.333333%;
+  }
+}
