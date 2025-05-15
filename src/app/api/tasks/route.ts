@@ -1,68 +1,66 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
-// Gunakan 'const' karena variabel tidak pernah di-reassign
-const tasks = [
-  { 
-    id: 1, 
-    title: 'Follow us on Twitter', 
-    description: 'Follow Pepe Tubes official Twitter account for updates', 
-    completed: false, 
-    points: 10 
-  },
-  { 
-    id: 2, 
-    title: 'Join our Telegram Group', 
-    description: 'Join our community on Telegram to chat with other members', 
-    completed: false, 
-    points: 15 
-  },
-  { 
-    id: 3, 
-    title: 'Share on Social Media', 
-    description: 'Share Pepe Tubes Airdrop on your social media accounts', 
-    completed: false, 
-    points: 20 
-  },
+// Master list task (admin editable)
+let masterTasks = [
+  { id: "twitter-follow", title: 'Follow us on Twitter', description: 'Follow Pepe Tubes official Twitter account for updates', points: 10 },
+  { id: "telegram-join", title: 'Join our Telegram Group', description: 'Join our community on Telegram to chat with other members', points: 15 },
+  { id: "twitter-post", title: 'Share on Twitter', description: 'Share Pepe Tubes Airdrop on your Twitter', points: 20 },
 ];
 
-export async function GET() {
-  try {
+// In-memory store status task per user
+const userTasks: Record<string, { [taskId: string]: boolean }> = {};
+
+// GET: Untuk user (dengan walletAddress) dan admin (tanpa walletAddress)
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const walletAddress = url.searchParams.get('walletAddress');
+  if (walletAddress) {
+    // Untuk user: return status task user
+    const status = userTasks[walletAddress.toLowerCase()] || {};
+    const tasks = masterTasks.map(task => ({
+      ...task,
+      completed: !!status[task.id]
+    }));
     return NextResponse.json(tasks);
+  }
+  // Untuk admin: return masterTasks (tanpa completed)
+  return NextResponse.json(masterTasks);
+}
+
+// POST: User menyelesaikan task
+export async function POST(request: Request) {
+  try {
+    const { walletAddress, taskId } = await request.json();
+    if (!walletAddress || !taskId) {
+      return NextResponse.json({ success: false, message: 'walletAddress & taskId required' }, { status: 400 });
+    }
+    // Pastikan taskId valid
+    const task = masterTasks.find(t => t.id === taskId);
+    if (!task) {
+      return NextResponse.json({ success: false, message: 'Task not found' }, { status: 404 });
+    }
+    // Cek jika sudah completed
+    const key = walletAddress.toLowerCase();
+    if (!userTasks[key]) userTasks[key] = {};
+    if (userTasks[key][taskId]) {
+      return NextResponse.json({ success: false, message: 'Task already completed' }, { status: 400 });
+    }
+    userTasks[key][taskId] = true;
+    return NextResponse.json({ success: true, taskId });
   } catch (error) {
-    console.error("Error in GET /api/tasks:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Internal Server Error', error: String(error) }, { status: 500 });
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { walletAddress, taskId } = body;
-    
-    // Log untuk debugging
-    console.log('Request body:', body);
-    console.log('taskId:', taskId, 'type:', typeof taskId);
-    
-    // Konversi taskId ke number jika dikirim sebagai string
-    const numericTaskId = typeof taskId === 'string' ? parseInt(taskId, 10) : taskId;
-    
-    // Buat copy dari tasks untuk menghindari mutasi langsung
-    const updatedTasks = tasks.map((task) =>
-      task.id === numericTaskId ? { ...task, completed: true } : task
-    );
-    const updatedTask = updatedTasks.find((task) => task.id === numericTaskId);
-
-    if (!updatedTask) {
-      return NextResponse.json({ success: false, message: 'Task not found' }, { status: 404 });
-    }
-    
-    // Simpan walletAddress dengan task yang telah diselesaikan (dalam implementasi nyata)
-    console.log(`User ${walletAddress} completed task ${numericTaskId}`);
-    
-    // Update referensi tasks secara tidak langsung (immutable)
-    return NextResponse.json({ success: true, task: updatedTask });
-  } catch (error) {
-    console.error("Error in POST /api/tasks:", error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error', error: String(error) }, { status: 500 });
-  }
+// PUT: Admin update points/title/desc tiap task
+export async function PUT(req: NextRequest) {
+  const updatedTasks = await req.json();
+  // Update hanya points, title, description, id tetap
+  masterTasks = masterTasks.map((task, idx) => ({
+    ...task,
+    points: updatedTasks[idx]?.points ?? task.points,
+    title: updatedTasks[idx]?.title ?? task.title,
+    description: updatedTasks[idx]?.description ?? task.description,
+  }));
+  return NextResponse.json(masterTasks);
 }

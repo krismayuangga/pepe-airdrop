@@ -89,6 +89,23 @@ export default function BottomNavbar() {
             {translations.common.leaderboard}
           </span>
         </Link>
+
+        {/* Referral menu */}
+        <Link href="/referral" className="flex flex-col items-center group">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 transition-all duration-200 ${
+            isActive('/referral')
+              ? "bg-gradient-to-br from-[#FFC452] to-[#5D4FFF] shadow-[0_0_12px_#FFC45299]"
+              : "bg-[#232841]"
+          }`}>
+            {/* Gunakan SVG user-plus atau import Image jika ingin */}
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isActive('/referral') ? 'text-[#FFC452]' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 14v6m3-3h-6m-2-6a4 4 0 11-8 0 4 4 0 018 0zm6 8a6 6 0 00-12 0v1h12v-1z" />
+            </svg>
+          </div>
+          <span className={`text-xs font-medium ${isActive('/referral') ? 'text-[#FFC452]' : 'text-gray-400'}`}>
+            Referral
+          </span>
+        </Link>
       </div>
     </div>
   );

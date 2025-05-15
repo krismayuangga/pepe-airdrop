@@ -101,3 +101,15 @@ export function isEligibleForAirdrop(completedTasks: string[]): boolean {
   const requiredTasks = taskConfigs.filter(task => task.required);
   return requiredTasks.every(task => completedTasks.includes(task.id));
 }
+
+let dynamicConfig: any = null;
+
+export async function fetchAdminConfig() {
+  if (!dynamicConfig) {
+    const res = await fetch("/api/admin/config");
+    dynamicConfig = await res.json();
+  }
+  return dynamicConfig;
+}
+
+// Gunakan fetchAdminConfig() untuk mendapatkan nilai reward, tokenPerUSD, dsb

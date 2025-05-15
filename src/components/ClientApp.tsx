@@ -76,19 +76,47 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  // Ganti inisialisasi activeTab agar sinkron dengan pathname
+  const pathname = usePathname();
+  const [activeTab, setActiveTab] = useState(() => {
+    if (pathname === "/referral") return "referral";
+    if (pathname === "/dashboard") return "dashboard";
+    if (pathname === "/tasks") return "tasks";
+    if (pathname === "/checkin") return "checkin";
+    if (pathname === "/claim") return "claim";
+    if (pathname === "/leaderboard") return "leaderboard";
+    return "dashboard";
+  });
+
   const [isConnecting, setIsConnecting] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
   const [lastCheckIn, setLastCheckIn] = useState<string | null>(null);
   // Add missing state variable for claim loading
   const [claimLoading, setClaimLoading] = useState(false);
+  const [broadcasts, setBroadcasts] = useState<string[]>([]);
+  const [rewardConfig, setRewardConfig] = useState<any>(null);
+  const [referralCount, setReferralCount] = useState(0);
+  const [referralInput, setReferralInput] = useState(""); // Untuk input kode referral
+  const [referralSuccess, setReferralSuccess] = useState<string | null>(null);
 
   const router = useRouter();
-  const pathname = usePathname();
+  // Tambahkan efek agar activeTab berubah saat pathname berubah (SPA navigation)
+  useEffect(() => {
+    if (pathname === "/referral") setActiveTab("referral");
+    else if (pathname === "/dashboard") setActiveTab("dashboard");
+    else if (pathname === "/tasks") setActiveTab("tasks");
+    else if (pathname === "/checkin") setActiveTab("checkin");
+    else if (pathname === "/claim") setActiveTab("claim");
+    else if (pathname === "/leaderboard") setActiveTab("leaderboard");
+    else setActiveTab("dashboard");
+  }, [pathname]);
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [showConnectWallet, setShowConnectWallet] = useState(true);
+
+  const today = new Date().toISOString().split('T')[0];
 
   // Referensi slides yang sudah ada
   const slides = [
@@ -154,10 +182,12 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
 
     const fetchCheckin = async () => {
       try {
-        const res = await fetch("/api/checkin");
+        if (!walletAddress) return;
+        const res = await fetch(`/api/checkin?walletAddress=${walletAddress}`);
         if (!res.ok) throw new Error("Failed to fetch check-in data");
         const data = await res.json();
         setLastCheckIn(data.lastCheckIn);
+        // JANGAN setCheckedIn di sini!
       } catch (error) {
         console.error("Error fetching check-in:", error);
       }
@@ -174,12 +204,50 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
       }
     };
 
+    const fetchBroadcasts = async () => {
+      try {
+        const res = await fetch("/api/admin/broadcast");
+        if (!res.ok) return;
+        const data = await res.json();
+        setBroadcasts(data.broadcasts || []);
+      } catch {}
+    };
+
+    const fetchRewardConfig = async () => {
+      try {
+        const res = await fetch("/api/admin/config");
+        if (!res.ok) return;
+        const data = await res.json();
+        setRewardConfig(data);
+      } catch {}
+    };
+
+    const fetchReferrals = async () => {
+      if (!walletAddress) return;
+      const res = await fetch(`/api/referral?wallet=${walletAddress}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setReferralCount(data.referrals?.length || 0);
+    };
     if (!showConnectWallet) {
-      fetchTasks();
       fetchCheckin();
+      fetchTasks();
       fetchClaim();
+      fetchBroadcasts();
+      fetchRewardConfig();
+      fetchReferrals();
+      const interval = setInterval(fetchBroadcasts, 30000);
+      return () => clearInterval(interval);
     }
-  }, [showConnectWallet]);
+  }, [showConnectWallet, walletAddress]);
+
+  // Reset checkedIn jika wallet berubah atau hari berganti
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (lastCheckIn !== today) {
+      setCheckedIn(false);
+    }
+  }, [walletAddress, lastCheckIn]);
 
   // Production-ready task completion handler
   const completeTask = async (id: string | number) => {
@@ -391,11 +459,30 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
   // Tentukan apakah bottom navbar harus ditampilkan berdasarkan pathname
   const shouldShowNavbar = !pathname.startsWith('/api/') && pathname !== '/';
 
+  // Tambahkan fungsi handleSubmitReferral sebelum return
+  const handleSubmitReferral = async () => {
+    if (!walletAddress || !referralInput) return;
+    try {
+      const res = await fetch("/api/referral", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referrer: referralInput, referred: walletAddress }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReferralSuccess("Referral submitted!");
+      } else {
+        setReferralSuccess(data.message || "Failed to submit referral.");
+      }
+      setTimeout(() => setReferralSuccess(null), 3000);
+    } catch {
+      setReferralSuccess("Failed to submit referral.");
+      setTimeout(() => setReferralSuccess(null), 3000);
+    }
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Use config directly instead of WagmiConfig wrapper in v2 */}
-      <ErrorNotification />
-
       {showConnectWallet ? (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#0B101F] text-white p-4 relative overflow-hidden">
           <div className="max-w-md w-full bg-[#14192E] bg-opacity-90 rounded-3xl p-6 shadow-lg backdrop-blur-sm z-10">
@@ -500,6 +587,20 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
       ) : (
         <div className="min-h-screen bg-[#0B101F] text-white relative pb-6">
           <div className="max-w-md mx-auto p-4 pb-20 relative z-10">
+            {/* Broadcast Announcement - letakkan di sini AGAR SELALU TAMPIL */}
+            {broadcasts.length > 0 && (
+              <div className="mb-4">
+                {broadcasts.slice(-1).map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-gradient-to-r from-[#5D4FFF] to-[#FFC452] text-black font-semibold rounded-lg px-4 py-3 mb-2 shadow-lg border border-[#5D4FFF]/30"
+                  >
+                    <span className="mr-2">📢</span>
+                    <span>{msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Header dengan efek glass dan neon */}
             <div
               className="flex justify-between items-center mb-4 glass-nav border border-[#232841] shadow-lg"
@@ -761,7 +862,7 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                   </div>
 
                   <p className="text-sm text-gray-400 mb-4">
-                    {checkedIn || lastCheckIn
+                    {checkedIn || lastCheckIn === today
                       ? `You've checked in today! Come back tomorrow for more rewards.`
                       : "Check in daily to earn rewards and keep your streak alive!"}
                   </p>
@@ -769,14 +870,14 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                   {/* Fixed Check-in button with proper type handling */}
                   <button
                     onClick={handleCheckIn}
-                    disabled={Boolean(checkedIn) || Boolean(lastCheckIn)}
+                    disabled={checkedIn || lastCheckIn === today}
                     className={`w-full py-3 rounded-xl text-sm font-medium ${
-                      Boolean(checkedIn) || Boolean(lastCheckIn)
+                      checkedIn || lastCheckIn === today
                         ? "bg-[#232841] text-gray-400 cursor-not-allowed"
                         : "bg-gradient-to-r from-[#483CBB] to-[#5D4FFF] hover:opacity-90"
                     }`}
                   >
-                    {Boolean(checkedIn) || Boolean(lastCheckIn)
+                    {checkedIn || lastCheckIn === today
                       ? "Already Checked In"
                       : "Check In Now"}
                   </button>
@@ -972,12 +1073,86 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                 </div>
               </div>
             )}
+
+            {/* Referral Content */}
+            {activeTab === "referral" && (
+              <div className="bg-[#14192E] rounded-2xl p-4">
+                <h2 className="text-lg font-bold mb-4">Referral Program</h2>
+                <div className="mb-3">
+                  <span className="text-xs text-gray-400">Your referral link:</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        typeof window !== "undefined" && walletAddress
+                          ? `${window.location.origin}/?ref=${walletAddress}`
+                          : ""
+                      }
+                      className="w-full p-2 rounded bg-[#181C2F] text-white border border-[#5D4FFF]/30 text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="px-2 py-1 bg-[#5D4FFF] text-white rounded text-xs"
+                      onClick={() => {
+                        if (typeof window !== "undefined" && walletAddress) {
+                          navigator.clipboard.writeText(`${window.location.origin}/?ref=${walletAddress}`);
+                        }
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <p className="text-xs text-[#FFC452] font-semibold">
+                    Referrals: {referralCount}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Referral reward: {rewardConfig?.rewardPerReferral ?? 0} points per referral
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Total referral reward: {(referralCount * (rewardConfig?.rewardPerReferral ?? 0)).toLocaleString()} points
+                  </p>
+                </div>
+                {/* Input kode referral (jika user datang dari link referral) */}
+                {!localStorage.getItem("referral_submitted") && (
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-400 mb-1">Have a referral code?</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={referralInput}
+                        onChange={e => setReferralInput(e.target.value)}
+                        placeholder="Referrer wallet address"
+                        className="flex-1 p-2 rounded bg-[#181C2F] text-white border border-[#5D4FFF]/30 text-xs"
+                      />
+                      <button
+                        type="button"
+                        className="px-2 py-1 bg-[#FFC452] text-black rounded text-xs font-bold"
+                        onClick={() => {
+                          handleSubmitReferral();
+                          localStorage.setItem("referral_submitted", "1");
+                        }}
+                        disabled={!referralInput}
+                      >
+                        Submit
+                      </button>
+                    </div>
+                    {referralSuccess && (
+                      <div className="text-xs mt-1 text-green-400">{referralSuccess}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Bottom Navigation - Glassmorphism & Animated Icons */}
           {shouldShowNavbar && (
             <div className="fixed bottom-0 left-0 right-0 glass-nav py-2 px-4 z-20 bg-[#101426]/80 border-t border-[#232841] backdrop-blur-md shadow-2xl">
               <div className="max-w-md mx-auto flex justify-between">
+                {/* Home */}
                 <button
                   aria-label="Home"
                   onClick={() => navigateToTab("dashboard")}
@@ -1012,7 +1187,7 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                     Home
                   </span>
                 </button>
-
+                {/* Tasks */}
                 <button
                   aria-label="Tasks"
                   onClick={() => navigateToTab("tasks")}
@@ -1047,6 +1222,7 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                     Tasks
                   </span>
                 </button>
+                {/* Check-in */}
                 <button
                   aria-label="Check-in"
                   onClick={() => navigateToTab("checkin")}
@@ -1081,6 +1257,7 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                     Check-in
                   </span>
                 </button>
+                {/* Claim */}
                 <button
                   aria-label="Claim"
                   onClick={() => navigateToTab("claim")}
@@ -1115,6 +1292,7 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                     Claim
                   </span>
                 </button>
+                {/* Leaderboard */}
                 <button
                   aria-label="Leaderboard"
                   onClick={() => navigateToTab("leaderboard")}
@@ -1147,6 +1325,41 @@ export default function ClientApp({ children }: { children?: React.ReactNode }) 
                     }`}
                   >
                     Leaderboard
+                  </span>
+                </button>
+                {/* Referral */}
+                <button
+                  aria-label="Referral"
+                  onClick={() => navigateToTab("referral")}
+                  className="flex flex-col items-center group focus:outline-none"
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 transition-all duration-200 group-hover:scale-110 group-hover:ring-2 group-hover:ring-[#FFC452]/60 ${
+                      activeTab === "referral"
+                        ? "bg-gradient-to-br from-[#FFC452] to-[#5D4FFF] shadow-[0_0_12px_#FFC45299] scale-110 ring-2 ring-[#FFC452]/80"
+                        : "bg-[#181C2F]"
+                    }`}
+                  >
+                    <Image
+                      src="/user-plus.svg"
+                      alt="Referral"
+                      width={22}
+                      height={22}
+                      className={
+                        activeTab === "referral"
+                          ? "drop-shadow-[0_0_8px_#FFC452]"
+                          : "opacity-70"
+                      }
+                    />
+                  </div>
+                  <span
+                    className={`text-xs font-bold transition-all ${
+                      activeTab === "referral"
+                        ? "text-[#FFC452] drop-shadow-[0_0_6px_#FFC452]"
+                        : "text-gray-400"
+                    }`}
+                  >
+                    Referral
                   </span>
                 </button>
               </div>

@@ -208,7 +208,6 @@ export default function TasksPage() {
 
   useEffect(() => {
     setMounted(true);
-    
     if (isConnected && address) {
       fetchTasks();
     }
@@ -216,106 +215,49 @@ export default function TasksPage() {
 
   const fetchTasks = async () => {
     if (!address) return;
-    
     setLoading(true);
     setError("");
-    
     try {
-      // Simulasi API call untuk task listing
-      setTimeout(() => {
-        const demoTasks = [
-          {
-            id: "twitter-follow",
-            title: "Follow PepeTubes on Twitter",
-            description: "Follow our official Twitter account for the latest updates.",
-            points: taskConfigs.find(t => t.id === "twitter-follow")?.points || 50,
-            completed: false,
-            icon: "🐦",
-            actionType: 'link' as const,
-            actionUrl: "https://twitter.com/PepeTubes",
-            verificationRequired: true
-          },
-          {
-            id: "twitter-post",
-            title: "Share about PEPE Tubes on Twitter",
-            description: "Share about PEPE Tubes Airdrop on your Twitter to earn points.",
-            points: taskConfigs.find(t => t.id === "twitter-post")?.points || 100,
-            completed: false,
-            icon: "📢",
-            actionType: 'tweet' as const,
-            actionUrl: tweetTemplates.default,
-            verificationRequired: true
-          },
-          {
-            id: "telegram-join",
-            title: "Join Telegram Group",
-            description: "Join our active community on Telegram.",
-            points: taskConfigs.find(t => t.id === "telegram-join")?.points || 50,
-            completed: false,
-            icon: "📱",
-            actionType: 'link' as const,
-            actionUrl: socialLinks.telegram,
-            verificationRequired: true
-          },
-          {
-            id: "discord-join",
-            title: "Join Discord Server",
-            description: "Join our Discord server to connect with other community members.",
-            points: taskConfigs.find(t => t.id === "discord-join")?.points || 50,
-            completed: false,
-            icon: "💬",
-            actionType: 'link' as const,
-            actionUrl: socialLinks.discord,
-            verificationRequired: true
-          },
-          {
-            id: "staking-task",
-            title: "Stake PEPE to Earn 2x Rewards",
-            description: "Stake PEPE on our platform to receive 2x airdrop allocation plus fixed USDT rewards.",
-            points: taskConfigs.find(t => t.id === "staking-task")?.points || 250,
-            completed: false,
-            icon: "🚀",
-            actionType: 'link' as const,
-            actionUrl: appLinks.staking,
-            verificationRequired: true
-          },
-          {
-            id: "referral",
-            title: "Refer Friends",
-            description: "Invite friends to join the airdrop program. Earn 20 points per referral.",
-            points: 20,
-            completed: false,
-            icon: "👥",
-            actionType: 'custom' as const,
-            actionHandler: async () => handleReferralTask(),
-            verificationRequired: false
-          }
-        ];
-        
-        // Cek localStorage untuk status tugas yang sudah diselesaikan
-        if (typeof window !== 'undefined' && address) {
-          const completedTasksKey = `completedTasks_${address.toLowerCase()}`;
-          const savedTasks = localStorage.getItem(completedTasksKey);
-          
-          if (savedTasks) {
-            try {
-              const completedTaskIds = JSON.parse(savedTasks) as string[];
-              demoTasks.forEach(task => {
-                task.completed = completedTaskIds.includes(task.id);
-              });
-            } catch (e) {
-              logger.error("Error parsing saved tasks", e);
-            }
-          }
-        }
-        
-        // Alternatif: Gunakan type assertion pada array
-        setTasks(demoTasks as Task[]);
-        setLoading(false);
-      }, 1000);
+      // Ambil tasks dari backend dengan walletAddress
+      const res = await fetch(`/api/tasks?walletAddress=${address}`);
+      if (!res.ok) throw new Error("Failed to fetch tasks");
+      const data = await res.json();
+      // Mapping: tambahkan icon dan actionType dari taskConfigs
+      const mappedTasks = data.map((task: any) => {
+        const config = taskConfigs.find(cfg => cfg.id === task.id);
+        // Default icon dan actionType jika tidak ditemukan
+        let icon = "📝";
+        let actionType: Task["actionType"] = "link";
+        if (task.id === "twitter-follow") icon = "🐦";
+        if (task.id === "twitter-post") icon = "📢";
+        if (task.id === "telegram-join") icon = "📱";
+        if (task.id === "discord-join") icon = "💬";
+        if (task.id === "staking") icon = "🚀";
+        if (task.id === "referral") icon = "👥";
+        if (task.id === "staking-task") icon = "🚀";
+        if (task.id === "share") icon = "🔗";
+        if (task.id === "swap") icon = "💱";
+        if (task.id === "invite") icon = "👫";
+        if (task.id === "checkin") icon = "✅";
+        if (task.id === "verify") icon = "🔍";
+        if (task.id === "custom") icon = "⚡";
+        if (config && config.actionUrl?.includes("twitter.com/intent/tweet")) actionType = "tweet";
+        else if (task.id === "referral") actionType = "custom";
+        else actionType = "link";
+        return {
+          ...task,
+          icon,
+          actionType,
+          verificationRequired: config?.verificationRequired ?? false,
+          proofRequired: config?.proofRequired ?? false,
+          actionUrl: config?.actionUrl,
+        };
+      });
+      setTasks(mappedTasks);
+      setLoading(false);
+      setTotalPoints(mappedTasks.filter((t: any) => t.completed).reduce((sum: number, t: any) => sum + t.points, 0));
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : "Failed to load tasks";
-      setError(errorMessage);
+      setError(e instanceof Error ? e.message : "Failed to load tasks");
       setLoading(false);
     }
   };
@@ -329,7 +271,13 @@ export default function TasksPage() {
     try {
       // For Twitter post task, show verification modal directly
       if (task.id === 'twitter-post') {
-        setVerifyingTaskId(task.id);
+        // Share ke Twitter dulu, baru buka modal verifikasi
+        if (task.actionUrl) {
+          window.open(task.actionUrl, '_blank', 'width=550,height=420,noopener,noreferrer');
+        }
+        setTimeout(() => {
+          setVerifyingTaskId(task.id);
+        }, 1000);
         return;
       }
       
@@ -337,37 +285,25 @@ export default function TasksPage() {
         case 'link':
           if (task.actionUrl) {
             openSocialLink(task.actionUrl);
-            
             if (task.verificationRequired) {
-              // Show verification dialog after 1 second (giving time for user to open the link)
               setTimeout(() => {
                 setVerifyingTaskId(task.id);
               }, 1000);
             } else {
-              // Auto-complete tasks that don't need verification
               setTimeout(() => {
                 completeTask(task.id);
               }, 2000);
             }
           }
           break;
-          
         case 'tweet':
           if (task.actionUrl) {
-            shareOnTwitter(task.actionUrl);
-            
-            if (task.verificationRequired) {
-              setCurrentVerifyingTask(task.id);
-              setShowVerification(true);
-            } else {
-              // Auto-complete tasks that don't need verification
-              setTimeout(() => {
-                completeTask(task.id);
-              }, 2000);
-            }
+            window.open(task.actionUrl, '_blank', 'width=550,height=420,noopener,noreferrer');
+            setTimeout(() => {
+              setVerifyingTaskId(task.id);
+            }, 1000);
           }
           break;
-          
         case 'custom':
           if (task.actionHandler) {
             await task.actionHandler();
@@ -445,37 +381,22 @@ export default function TasksPage() {
       setError("Connect your wallet first");
       return;
     }
-
     setCompletingTask(taskId);
     setError("");
-    
     try {
-      // Simulasi API call untuk menandai task sebagai selesai
-      setTimeout(() => {
-        setTasks(prevTasks => {
-          const updatedTasks = prevTasks.map(task => 
-            task.id === taskId ? {...task, completed: true} : task
-          );
-          
-          // Simpan status ke localStorage
-          if (typeof window !== 'undefined') {
-            const completedTaskIds = updatedTasks
-              .filter(task => task.completed)
-              .map(task => task.id);
-              
-            
-            const completedTasksKey = `completedTasks_${address.toLowerCase()}`;
-            localStorage.setItem(completedTasksKey, JSON.stringify(completedTaskIds));
-          }
-          
-          return updatedTasks;
-        });
-        
-        setCompletingTask(null);
-      }, 1000);
+      // Update status task di backend
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address, taskId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Failed to complete task");
+      // Refresh tasks
+      await fetchTasks();
+      setCompletingTask(null);
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : "Failed to complete task";
-      setError(errorMessage);
+      setError(e instanceof Error ? e.message : "Failed to complete task");
       setCompletingTask(null);
     }
   };
