@@ -1,115 +1,14 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useAccount } from "wagmi";
 import { useWeb3Modal } from "@web3modal/wagmi/react";
 import { useLanguage } from "@/context/LanguageContext";
-
-// Template untuk tweet
-const tweetTemplates = {
-  default: "https://twitter.com/intent/tweet?text=I'm%20participating%20in%20the%20%23PEPETUBES%20airdrop!%20Join%20now%20at%20https://airdrop.pepetubes.io",
-  referral: (code: string) => `https://twitter.com/intent/tweet?text=I'm%20participating%20in%20the%20%23PEPETUBES%20airdrop!%20Join%20using%20my%20referral%20code%20${code}%20at%20https://airdrop.pepetubes.io/ref/${code}`
-};
-
-// Social media links
-const socialLinks = {
-  twitter: "https://twitter.com/PepeTubes",
-  telegram: "https://t.me/pepetubes",
-  discord: "https://discord.gg/pepetubes"
-};
-
-// App links
-const appLinks = {
-  staking: "https://app.pepetubes.io/stake"
-};
-
-// Simple logger
-const logger = {
-  error: (message: string, error?: any) => {
-    console.error(`[ERROR] ${message}:`, error);
-  },
-  info: (message: string, data?: any) => {
-    console.info(`[INFO] ${message}:`, data);
-  }
-};
+import TaskVerification from "@/components/TaskVerification";
 
 // Helper function untuk membuka social link
 const openSocialLink = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer');
-};
-
-// Helper function untuk share di Twitter
-const shareOnTwitter = (tweetUrl: string) => {
-  window.open(tweetUrl, '_blank', 'width=550,height=420,noopener,noreferrer');
-};
-
-// Dummy TaskVerification component
-const TaskVerification = ({ taskId, walletAddress, onVerificationComplete, onCancel }: {
-  taskId: string;
-  walletAddress: string;
-  onVerificationComplete: (result: VerificationResult) => void;
-  onCancel: () => void;
-}) => {
-  const [code, setCode] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  
-  const handleVerify = () => {
-    setVerifying(true);
-    
-    // Demo verification - in real app this would be API call
-    setTimeout(() => {
-      const taskConfig = taskConfigs.find(t => t.id === taskId);
-      if (code === 'PEPETW2' || code === 'DEMO123') {
-        onVerificationComplete({
-          success: true,
-          message: "Task verified successfully!",
-          taskId,
-          points: taskConfig?.points || 50
-        });
-      } else {
-        onVerificationComplete({
-          success: false,
-          message: "Invalid verification code"
-        });
-      }
-      setVerifying(false);
-    }, 1500);
-  };
-  
-  return (
-    <div className="bg-[#232841] p-6 rounded-xl">
-      <h3 className="text-xl font-bold mb-4">Verify Task Completion</h3>
-      <p className="mb-4 text-gray-400">Enter the verification code you received after completing the task.</p>
-      
-      <input
-        type="text"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        placeholder="Enter verification code"
-        className="w-full px-4 py-2 bg-[#14192E] border border-[#5D4FFF]/30 rounded-lg mb-4"
-      />
-      
-      <div className="flex gap-3">
-        <button 
-          onClick={onCancel}
-          className="flex-1 py-2 bg-[#14192E] text-gray-400 rounded-lg hover:bg-[#1B2136]"
-        >
-          Cancel
-        </button>
-        <button 
-          onClick={handleVerify}
-          disabled={!code || verifying}
-          className="flex-1 py-2 bg-gradient-to-r from-[#5D4FFF] to-[#483CBB] text-white rounded-lg disabled:opacity-50"
-        >
-          {verifying ? "Verifying..." : "Verify"}
-        </button>
-      </div>
-      
-      <p className="mt-4 text-xs text-gray-400 text-center">
-        For demo purposes, use code: <span className="text-[#FFC452]">PEPETW2</span>
-      </p>
-    </div>
-  );
 };
 
 // Interface untuk Task
@@ -187,33 +86,24 @@ const taskConfigs: TaskConfig[] = [
   }
 ];
 
+type TaskMapped = Task & { icon: string; actionType: Task["actionType"]; verificationRequired: boolean; proofRequired?: boolean; actionUrl?: string };
+
 export default function TasksPage() {
   const { address, isConnected } = useAccount();
   const { open } = useWeb3Modal();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<TaskMapped[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [completingTask, setCompletingTask] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [totalPoints, setTotalPoints] = useState(0);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [showVerification, setShowVerification] = useState(false);
-  const [currentVerifyingTask, setCurrentVerifyingTask] = useState<string | null>(null);
   const [verifyingTaskId, setVerifyingTaskId] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   // Add language hook
   const { translations } = useLanguage();
 
-  useEffect(() => {
-    setMounted(true);
-    if (isConnected && address) {
-      fetchTasks();
-    }
-  }, [isConnected, address]);
-
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     if (!address) return;
     setLoading(true);
     setError("");
@@ -223,7 +113,7 @@ export default function TasksPage() {
       if (!res.ok) throw new Error("Failed to fetch tasks");
       const data = await res.json();
       // Mapping: tambahkan icon dan actionType dari taskConfigs
-      const mappedTasks = data.map((task: any) => {
+      const mappedTasks: TaskMapped[] = data.map((task: Record<string, unknown>) => {
         const config = taskConfigs.find(cfg => cfg.id === task.id);
         // Default icon dan actionType jika tidak ditemukan
         let icon = "📝";
@@ -255,12 +145,19 @@ export default function TasksPage() {
       });
       setTasks(mappedTasks);
       setLoading(false);
-      setTotalPoints(mappedTasks.filter((t: any) => t.completed).reduce((sum: number, t: any) => sum + t.points, 0));
+      setTotalPoints(mappedTasks.filter((t) => t.completed).reduce((sum, t) => sum + t.points, 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load tasks");
       setLoading(false);
     }
-  };
+  }, [address]);
+
+  useEffect(() => {
+    setMounted(true);
+    if (isConnected && address) {
+      fetchTasks();
+    }
+  }, [isConnected, address, fetchTasks]);
 
   const handleTaskAction = async (task: Task) => {
     if (!isConnected) {
@@ -318,65 +215,18 @@ export default function TasksPage() {
   
   // Add handler for verification results
   const handleVerificationComplete = (result: VerificationResult) => {
-    setVerificationResult(result);
-    
     if (result.success && verifyingTaskId) {
-      completeTask(verifyingTaskId);
-      
-      // Show success notification
+      // Kirim proof ke backend
+      completeTask(verifyingTaskId, result);
       const message = `${result.message} +${result.points} points`;
       setSuccessMessage(message);
-      
-      // Hide modal
       setVerifyingTaskId(null);
     } else if (!result.success) {
       setError(result.message || "Verification failed. Please try again.");
     }
   };
 
-  const handleReferralTask = async () => {
-    if (!address) return;
-    
-    // Generate referral link with user's address
-    const referralCode = address.slice(2, 8);
-    const referralLink = `${window.location.origin}/ref/${referralCode}`;
-    
-    // Create dialog to display referral link
-    const referralMessage = `Your referral code: ${referralCode}\nLink: ${referralLink}\n\nShare this link with your friends to earn 20 points per referral!`;
-    
-    // Using native prompt for simplicity, in real implementation use a better UI modal
-    alert(referralMessage);
-    
-    // Create tweet with referral
-    const referralTweet = tweetTemplates.referral(referralCode);
-    const shareTweet = confirm("Do you want to share your referral on Twitter?");
-    
-    if (shareTweet) {
-      shareOnTwitter(referralTweet);
-    }
-    
-    // Mark task as completed
-    completeTask("referral");
-  };
-
-  const verifyTaskCompletion = () => {
-    if (!currentVerifyingTask || !verificationCode) return;
-    
-    // In a real implementation, this would send verification code to API
-    // to verify whether the user actually completed the task
-    
-    // For demo, we pretend to verify with a simple code "PEPE123"
-    if (verificationCode === "PEPE123") {
-      completeTask(currentVerifyingTask);
-      setShowVerification(false);
-      setVerificationCode("");
-      setCurrentVerifyingTask(null);
-    } else {
-      setError("Invalid verification code. Please try again.");
-    }
-  };
-
-  const completeTask = async (taskId: string) => {
+  const completeTask = async (taskId: string, verificationResult?: VerificationResult) => {
     if (!isConnected || !address) {
       setError("Connect your wallet first");
       return;
@@ -384,50 +234,30 @@ export default function TasksPage() {
     setCompletingTask(taskId);
     setError("");
     try {
-      // Update status task di backend
+      // Siapkan proof sesuai jenis task
+      type Proof = { tweetUrl?: string; twitterUsername?: string; telegramUsername?: string; discordUsername?: string; transactionHash?: string };
+      let proof: Proof = {};
+      if (verificationResult) {
+        const safeProofUrl = verificationResult.proofUrl || "";
+        if (taskId === 'twitter-post') proof = { tweetUrl: safeProofUrl };
+        else if (taskId === 'twitter-follow') proof = { twitterUsername: safeProofUrl };
+        else if (taskId === 'telegram-join') proof = { telegramUsername: safeProofUrl };
+        else if (taskId === 'discord-join') proof = { discordUsername: safeProofUrl };
+        else if (taskId === 'swap-tokens') proof = { transactionHash: safeProofUrl };
+      }
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, taskId }),
+        body: JSON.stringify({ walletAddress: address, taskId, proof }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to complete task");
-      // Refresh tasks
       await fetchTasks();
       setCompletingTask(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to complete task");
       setCompletingTask(null);
     }
-  };
-
-  // Definisi style inline untuk emoji
-  const emojiStyle = {
-    fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
-    fontSize: '24px',
-    fontStyle: 'normal',
-    lineHeight: 1,
-    display: 'inline-block'
-  };
-
-  // Definisi style untuk icon container
-  const iconContainerStyle = {
-    width: '3rem',
-    height: '3rem',
-    borderRadius: '0.75rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  };
-
-  // Definisi style untuk task card
-  const taskCardStyle = {
-    backgroundColor: '#232841',
-    borderRadius: '0.75rem',
-    padding: '1.25rem',
-    border: '1px solid #232841',
-    transition: 'all 0.2s ease',
-    marginBottom: '1rem'
   };
 
   if (!mounted) return null;
@@ -503,7 +333,6 @@ export default function TasksPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <TaskVerification
             taskId={verifyingTaskId}
-            walletAddress={address}
             onVerificationComplete={handleVerificationComplete}
             onCancel={() => setVerifyingTaskId(null)}
           />

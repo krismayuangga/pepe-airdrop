@@ -1,22 +1,26 @@
 import React, { useState } from 'react';
-import { VerificationResult } from '@/services/verificationService';
 import { tweetTemplates } from '@/config/socialLinks';
 import Image from 'next/image';
 
+export interface VerificationResult {
+  success: boolean;
+  message: string;
+  points?: number;
+  status?: 'pending' | 'verified' | 'rejected';
+  proofUrl?: string; // Tambahkan ini agar bisa mengirim proof ke backend
+}
+
 interface TaskVerificationProps {
   taskId: string;
-  walletAddress: string;
   onVerificationComplete: (result: VerificationResult) => void;
   onCancel: () => void;
 }
 
 export default function TaskVerification({
   taskId,
-  walletAddress,
   onVerificationComplete,
   onCancel
 }: TaskVerificationProps) {
-  const [verificationCode, setVerificationCode] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,38 +46,82 @@ export default function TaskVerification({
   };
   
   const handleVerify = async () => {
-    if (!verificationCode && !proofUrl && step === 'verification') {
-      setError('Mohon masukkan kode verifikasi atau URL bukti');
+    if (!proofUrl) {
+      setError('Mohon masukkan URL atau username yang valid');
       return;
     }
-    
     setLoading(true);
     setError('');
-    
     try {
-      // Untuk demo, kita simualasikan verifikasi sederhana
       setTimeout(() => {
-        // Validasi sederhana - pastikan URL tweet atau kode verifikasi ada
+        let parsedProof = proofUrl;
+        // Untuk twitter-follow, jika user memasukkan link profil, ambil username-nya
+        if (taskId === 'twitter-follow') {
+          // Support both twitter.com and x.com
+          const match = proofUrl.match(/(?:twitter\.com|x\.com)\/(\w{1,15})/);
+          if (match) parsedProof = match[1];
+          // Jika ada @ di depan, hapus
+          parsedProof = parsedProof.replace(/^@/, '');
+        }
         if (isTwitterPost) {
-          // Check for both twitter.com and x.com domains
-          if (proofUrl.includes('twitter.com') || proofUrl.includes('x.com') || verificationCode === 'PEPETW2') {
+          if (proofUrl.includes('twitter.com') || proofUrl.includes('x.com')) {
             onVerificationComplete({
               success: true,
               message: "Tweet berhasil diverifikasi!",
               points: 150,
-              status: 'verified'
+              status: 'verified',
+              proofUrl
             });
           } else {
-            setError("URL tweet tidak valid atau kode verifikasi salah. Pastikan URL berisi 'twitter.com' atau 'x.com'");
+            setError("URL tweet tidak valid. Pastikan URL berisi 'twitter.com' atau 'x.com'");
+            setLoading(false);
+          }
+        } else if (isTelegramTask) {
+          if (proofUrl && /^@?\w{5,}$/.test(proofUrl)) {
+            onVerificationComplete({
+              success: true,
+              message: "Username Telegram valid!",
+              points: 100,
+              status: 'verified',
+              proofUrl
+            });
+          } else {
+            setError("Username Telegram tidak valid. Minimal 5 karakter, hanya huruf/angka/underscore.");
+            setLoading(false);
+          }
+        } else if (isDiscordTask) {
+          if (proofUrl && /^.{3,32}#[0-9]{4}$/.test(proofUrl)) {
+            onVerificationComplete({
+              success: true,
+              message: "Username Discord valid!",
+              points: 100,
+              status: 'verified',
+              proofUrl
+            });
+          } else {
+            setError("Username Discord tidak valid. Format: username#1234");
+            setLoading(false);
+          }
+        } else if (taskId === 'twitter-follow') {
+          if (parsedProof && /^\w{3,15}$/.test(parsedProof)) {
+            onVerificationComplete({
+              success: true,
+              message: "Username Twitter valid!",
+              points: 100,
+              status: 'verified',
+              proofUrl: parsedProof
+            });
+          } else {
+            setError("Username Twitter tidak valid.");
             setLoading(false);
           }
         } else {
-          // Logic for other verification types
           onVerificationComplete({
             success: true,
             message: "Tugas berhasil diverifikasi!",
             points: 100,
-            status: 'verified'
+            status: 'verified',
+            proofUrl
           });
         }
       }, 1500);
@@ -150,7 +198,7 @@ export default function TaskVerification({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <p>Tweet telah dibagikan! Masukkan URL tweet atau kode verifikasi untuk mengklaim poin Anda.</p>
+          <p>Tweet telah dibagikan! Masukkan URL tweet untuk mengklaim poin Anda.</p>
         </div>
         
         <div className="space-y-4">
@@ -164,18 +212,6 @@ export default function TaskVerification({
               placeholder="contoh: https://twitter.com/... atau https://x.com/..."
             />
             <p className="mt-1 text-xs text-gray-400">Salin dan tempel URL tweet yang baru saja Anda posting</p>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">ATAU Kode Verifikasi</label>
-            <input
-              type="text"
-              value={verificationCode}
-              onChange={(e) => setVerificationCode(e.target.value)}
-              className="w-full p-3 bg-[#232841] border border-gray-700 rounded-lg text-white"
-              placeholder="Masukkan kode verifikasi (PEPETW2)"
-            />
-            <p className="mt-1 text-xs text-gray-400">Untuk demo, gunakan kode: PEPETW2</p>
           </div>
           
           {error && (
@@ -193,7 +229,7 @@ export default function TaskVerification({
             </button>
             <button
               onClick={handleVerify}
-              disabled={loading || (!proofUrl && !verificationCode)}
+              disabled={loading || !proofUrl}
               className="flex-1 py-2 bg-gradient-to-r from-[#5D4FFF] to-[#483CBB] text-white rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               {loading ? (
@@ -225,17 +261,6 @@ export default function TaskVerification({
       )}
       
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Kode Verifikasi</label>
-          <input
-            type="text"
-            value={verificationCode}
-            onChange={(e) => setVerificationCode(e.target.value)}
-            className="w-full p-3 bg-[#232841] border border-gray-700 rounded-lg text-white"
-            placeholder="Masukkan kode verifikasi"
-          />
-        </div>
-        
         <div>
           <label className="block text-sm font-medium mb-2">{getPlaceholderText()}</label>
           <input
@@ -277,12 +302,11 @@ export default function TaskVerification({
     if (isTwitterTask && taskId === 'twitter-follow') {
       return (
         <div className="mb-4 p-3 bg-[#232841] rounded-lg text-sm">
-          <p>Cara mendapatkan kode verifikasi:</p>
+          <p>Cara menyelesaikan tugas:</p>
           <ol className="list-decimal pl-5 mt-2 space-y-1 text-gray-400">
             <li>Kunjungi <a href="https://twitter.com/PepeTubes" target="_blank" rel="noopener noreferrer" className="text-[#FFC452] hover:underline">Twitter PepeTubes</a></li>
             <li>Follow akun tersebut</li>
-            <li>Cari tweet terbaru dengan kode verifikasi</li>
-            <li>Masukkan kode tersebut di bawah ini</li>
+            <li>Masukkan URL profil Twitter Anda di bawah ini</li>
           </ol>
         </div>
       );
@@ -291,12 +315,11 @@ export default function TaskVerification({
     if (isTelegramTask) {
       return (
         <div className="mb-4 p-3 bg-[#232841] rounded-lg text-sm">
-          <p>Cara mendapatkan kode verifikasi:</p>
+          <p>Cara menyelesaikan tugas:</p>
           <ol className="list-decimal pl-5 mt-2 space-y-1 text-gray-400">
             <li>Kunjungi <a href="https://t.me/+3BONF0QHbr9iODU9" target="_blank" rel="noopener noreferrer" className="text-[#FFC452] hover:underline">Grup Telegram PepeTubes</a></li>
             <li>Gabung ke grup tersebut</li>
-            <li>Cari pesan pin dengan kode verifikasi</li>
-            <li>Masukkan username Telegram dan kode verifikasi di bawah ini</li>
+            <li>Masukkan username Telegram Anda di bawah ini</li>
           </ol>
         </div>
       );
@@ -305,12 +328,11 @@ export default function TaskVerification({
     if (isDiscordTask) {
       return (
         <div className="mb-4 p-3 bg-[#232841] rounded-lg text-sm">
-          <p>Cara mendapatkan kode verifikasi:</p>
+          <p>Cara menyelesaikan tugas:</p>
           <ol className="list-decimal pl-5 mt-2 space-y-1 text-gray-400">
             <li>Kunjungi <a href="https://discord.gg/M3CcMr6NrG" target="_blank" rel="noopener noreferrer" className="text-[#FFC452] hover:underline">Discord PepeTubes</a></li>
             <li>Gabung ke server Discord</li>
-            <li>Lihat channel #verification untuk kode verifikasi</li>
-            <li>Masukkan username Discord dan kode verifikasi di bawah ini</li>
+            <li>Masukkan username Discord Anda di bawah ini</li>
           </ol>
         </div>
       );
@@ -318,8 +340,7 @@ export default function TaskVerification({
     
     return (
       <div className="mb-4 p-3 bg-[#232841] rounded-lg text-sm">
-        <p>Masukkan kode verifikasi yang Anda dapatkan setelah menyelesaikan tugas.</p>
-        <p className="mt-2 text-gray-400">Kode verifikasi dapat ditemukan di platform terkait setelah menyelesaikan tindakan yang diminta.</p>
+        <p>Masukkan URL atau username yang relevan setelah menyelesaikan tugas.</p>
       </div>
     );
   }

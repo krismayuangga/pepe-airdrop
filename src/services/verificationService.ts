@@ -19,6 +19,7 @@ export interface VerificationRequest {
     transactionHash?: string;
     verificationCode?: string;
     referralCode?: string;
+    twitterUsername?: string;
   };
 }
 
@@ -32,11 +33,9 @@ export interface VerificationResult {
 // Konfigurasi kode verifikasi statis untuk demo
 // Dalam implementasi sebenarnya, ini akan disimpan di database
 const verificationCodes = {
-  'twitter-follow': 'PEPETWT',
   'twitter-post': 'PEPETW2',
   'telegram-join': 'PEPETG',
   'discord-join': 'PEPEDC',
-  'swap-tokens': 'PEPESWAP',
   'staking-task': 'PEPESTK'
 };
 
@@ -62,28 +61,101 @@ export async function verifyTask(request: VerificationRequest): Promise<Verifica
   try {
     // Strategi verifikasi berbeda berdasarkan jenis tugas
     switch (taskId) {
-      case 'twitter-follow':
-      case 'twitter-post':
-      case 'telegram-join':
-      case 'discord-join':
-      case 'swap-tokens':
-        // Verifikasi dengan kode verifikasi
-        if (proofData?.verificationCode === verificationCodes[taskId as keyof typeof verificationCodes]) {
+      case 'twitter-post': {
+        // Validasi URL tweet
+        const tweetUrl = proofData?.tweetUrl || '';
+        if (tweetUrl && (tweetUrl.includes('twitter.com') || tweetUrl.includes('x.com'))) {
           markTaskAsCompleted(walletAddress, taskId);
           return {
             success: true,
-            message: "Verifikasi berhasil!",
+            message: "Tweet berhasil diverifikasi!",
             points: getPointsForTask(taskId),
             status: 'verified'
           };
         } else {
           return {
             success: false,
-            message: "Kode verifikasi tidak valid",
+            message: "URL tweet tidak valid. Harus mengandung 'twitter.com' atau 'x.com'",
             status: 'rejected'
           };
         }
-      
+      }
+      case 'telegram-join': {
+        // Validasi username telegram
+        const username = proofData?.telegramUsername || '';
+        if (username && /^@?\w{5,}$/.test(username)) {
+          markTaskAsCompleted(walletAddress, taskId);
+          return {
+            success: true,
+            message: "Username Telegram valid!",
+            points: getPointsForTask(taskId),
+            status: 'verified'
+          };
+        } else {
+          return {
+            success: false,
+            message: "Username Telegram tidak valid.",
+            status: 'rejected'
+          };
+        }
+      }
+      case 'discord-join': {
+        // Validasi username discord
+        const username = proofData?.discordUsername || '';
+        if (username && /^.{3,32}#[0-9]{4}$/.test(username)) {
+          markTaskAsCompleted(walletAddress, taskId);
+          return {
+            success: true,
+            message: "Username Discord valid!",
+            points: getPointsForTask(taskId),
+            status: 'verified'
+          };
+        } else {
+          return {
+            success: false,
+            message: "Username Discord tidak valid. Format: username#1234",
+            status: 'rejected'
+          };
+        }
+      }
+      case 'twitter-follow': {
+        // Validasi username Twitter (contoh: @username atau username)
+        const username = proofData?.twitterUsername || '';
+        if (username && /^@?\w{3,15}$/.test(username)) {
+          markTaskAsCompleted(walletAddress, taskId);
+          return {
+            success: true,
+            message: "Username Twitter valid!",
+            points: getPointsForTask(taskId),
+            status: 'verified'
+          };
+        } else {
+          return {
+            success: false,
+            message: "Username Twitter tidak valid.",
+            status: 'rejected'
+          };
+        }
+      }
+      case 'swap-tokens': {
+        // Validasi hash transaksi (64 karakter heksadesimal)
+        const txHash = proofData?.transactionHash || '';
+        if (/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+          markTaskAsCompleted(walletAddress, taskId);
+          return {
+            success: true,
+            message: "Transaksi swap valid!",
+            points: getPointsForTask(taskId),
+            status: 'verified'
+          };
+        } else {
+          return {
+            success: false,
+            message: "Hash transaksi tidak valid.",
+            status: 'rejected'
+          };
+        }
+      }
       case 'referral':
         // Verifikasi referral
         if (proofData?.referralCode) {
@@ -106,7 +178,7 @@ export async function verifyTask(request: VerificationRequest): Promise<Verifica
       default:
         return {
           success: false,
-          message: "Jenis tugas tidak dikenali",
+          message: "Jenis tugas tidak dikenali atau belum diimplementasi validasinya",
           status: 'rejected'
         };
     }
