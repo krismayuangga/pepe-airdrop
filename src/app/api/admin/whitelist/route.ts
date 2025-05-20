@@ -1,4 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-let whitelist: string[] = [];
-export async function GET() { return NextResponse.json(whitelist); }
-export async function POST(req: NextRequest) { const { wallet } = await req.json(); if (!whitelist.includes(wallet)) whitelist.push(wallet); return NextResponse.json(whitelist); }
+import { verifyAdminJwt } from '@/utils/auth';
+
+const whitelist: string[] = [];
+
+function getAdminFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.replace('Bearer ', '').trim();
+  return verifyAdminJwt(token);
+}
+
+export async function GET(req: NextRequest) {
+  const admin = getAdminFromRequest(req);
+  if (!admin) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  return NextResponse.json(whitelist);
+}
+
+export async function POST(req: NextRequest) {
+  const admin = getAdminFromRequest(req);
+  if (!admin) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  const { wallet } = await req.json();
+  if (!whitelist.includes(wallet)) whitelist.push(wallet);
+  return NextResponse.json(whitelist);
+}

@@ -4,7 +4,7 @@ import UserTask from '@/models/UserTask';
 import UserCheckin from '@/models/UserCheckin';
 import UserClaim from '@/models/UserClaim';
 import Referral from '@/models/Referral';
-import { masterTasks } from '@/app/api/tasks/route';
+import Task from '@/models/Task';
 
 const config = {
   airdropStart: "",
@@ -44,7 +44,7 @@ export async function GET() {
   // Daftar peserta terbaru (dari UserTask)
   const latestParticipants = await UserTask.find().sort({ completedAt: -1 }).limit(10).lean();
   // Daftar tugas
-  const tasks = masterTasks;
+  const tasks = await Task.find({});
   return NextResponse.json({
     totalUsers: allWallets.length,
     totalTasks,

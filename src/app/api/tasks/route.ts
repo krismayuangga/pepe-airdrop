@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from '@/utils/db';
 import UserTask from '@/models/UserTask';
+import Task from '@/models/Task';
 import { verifyTask } from '@/services/verificationService';
-
-// Master list task (admin editable)
-export let masterTasks = [
-  { id: "twitter-follow", title: 'Follow us on Twitter', description: 'Follow Pepe Tubes official Twitter account for updates', points: 10 },
-  { id: "telegram-join", title: 'Join our Telegram Group', description: 'Join our community on Telegram to chat with other members', points: 15 },
-  { id: "twitter-post", title: 'Share on Twitter', description: 'Share Pepe Tubes Airdrop on your Twitter', points: 20 },
-];
+import { verifyAdminJwt } from '@/utils/auth';
 
 // GET: Untuk user (dengan walletAddress) dan admin (tanpa walletAddress)
 export async function GET(request: Request) {
@@ -20,14 +15,21 @@ export async function GET(request: Request) {
     const userTaskDocs = await UserTask.find({ walletAddress: walletAddress.toLowerCase() });
     const status: Record<string, boolean> = {};
     userTaskDocs.forEach(doc => { status[doc.taskId] = doc.completed; });
-    const tasks = masterTasks.map(task => ({
-      ...task,
-      completed: !!status[task.id]
+    const tasks = await Task.find({});
+    const result = tasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      points: task.points,
+      completed: !!status[task.id],
+      updatedAt: task.updatedAt,
+      createdAt: task.createdAt
     }));
-    return NextResponse.json(tasks);
+    return NextResponse.json(result);
   }
-  // Untuk admin: return masterTasks (tanpa completed)
-  return NextResponse.json(masterTasks);
+  // Untuk admin: return semua task, urutkan terbaru di atas
+  const tasks = await Task.find({}).sort({ updatedAt: -1 });
+  return NextResponse.json(tasks);
 }
 
 // POST: User menyelesaikan task
@@ -35,13 +37,21 @@ export async function POST(request: Request) {
   await connectDB();
   try {
     const { walletAddress, taskId, proof } = await request.json();
-    if (!walletAddress || !taskId) {
-      return NextResponse.json({ success: false, message: 'walletAddress & taskId required' }, { status: 400 });
+    if (!walletAddress || typeof walletAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return NextResponse.json({ success: false, message: 'Wallet address tidak valid' }, { status: 400 });
     }
-    // Pastikan taskId valid
-    const task = masterTasks.find(t => t.id === taskId);
+    if (!taskId || typeof taskId !== 'string') {
+      return NextResponse.json({ success: false, message: 'Task ID tidak valid' }, { status: 400 });
+    }
+    // Pastikan taskId valid di database
+    const task = await Task.findOne({ id: taskId });
     if (!task) {
       return NextResponse.json({ success: false, message: 'Task not found' }, { status: 404 });
+    }
+    // Cek jika sudah completed
+    const exists = await UserTask.findOne({ walletAddress: walletAddress.toLowerCase(), taskId });
+    if (exists && exists.completed) {
+      return NextResponse.json({ success: false, message: 'Task already completed' }, { status: 400 });
     }
     // Verifikasi proof (username/url/hash) via verificationService
     const verificationResult = await verifyTask({
@@ -51,11 +61,6 @@ export async function POST(request: Request) {
     });
     if (!verificationResult.success) {
       return NextResponse.json({ success: false, message: verificationResult.message }, { status: 400 });
-    }
-    // Cek jika sudah completed
-    const exists = await UserTask.findOne({ walletAddress: walletAddress.toLowerCase(), taskId });
-    if (exists && exists.completed) {
-      return NextResponse.json({ success: false, message: 'Task already completed' }, { status: 400 });
     }
     if (exists) {
       exists.completed = true;
@@ -71,15 +76,51 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: Admin update points/title/desc tiap task
-export async function PUT(req: NextRequest) {
-  const updatedTasks = await req.json();
-  // Update hanya points, title, description, id tetap
-  masterTasks = masterTasks.map((task, idx) => ({
-    ...task,
-    points: updatedTasks[idx]?.points ?? task.points,
-    title: updatedTasks[idx]?.title ?? task.title,
-    description: updatedTasks[idx]?.description ?? task.description,
-  }));
-  return NextResponse.json(masterTasks);
+function getAdminFromRequest(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.replace('Bearer ', '').trim();
+  return verifyAdminJwt(token);
 }
+
+// PUT: Admin update satu task (by id)
+export async function PUT(req: NextRequest) {
+  await connectDB();
+  const admin = getAdminFromRequest(req);
+  if (!admin) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  const { id, title, description, points } = await req.json();
+  if (!id) {
+    return NextResponse.json({ success: false, message: 'Task id required' }, { status: 400 });
+  }
+  const task = await Task.findOne({ id });
+  if (!task) {
+    return NextResponse.json({ success: false, message: 'Task not found' }, { status: 404 });
+  }
+  if (title) task.title = title;
+  if (description) task.description = description;
+  if (typeof points === 'number' && points >= 0) task.points = points;
+  await task.save();
+  return NextResponse.json({ success: true, task });
+}
+
+// DELETE: Admin hapus task by id
+export async function DELETE(req: NextRequest) {
+  await connectDB();
+  const admin = getAdminFromRequest(req);
+  if (!admin) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  const { id } = await req.json();
+  if (!id) {
+    return NextResponse.json({ success: false, message: 'Task id required' }, { status: 400 });
+  }
+  const task = await Task.findOneAndDelete({ id });
+  if (!task) {
+    return NextResponse.json({ success: false, message: 'Task not found' }, { status: 404 });
+  }
+  return NextResponse.json({ success: true });
+}
+
+// Endpoint admin create task ada di /api/tasks/admin/route.ts

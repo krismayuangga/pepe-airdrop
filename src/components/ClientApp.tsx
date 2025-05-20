@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
+import TaskNotification from "./TaskNotification";
 
 // Buat QueryClient dengan konfigurasi untuk produksi
 const queryClient = new QueryClient({
@@ -22,6 +23,8 @@ interface Task {
   description: string;
   completed: boolean;
   points: number;
+  url?: string;
+  type?: 'follow' | 'share' | 'custom';
 }
 
 // Define props for the ConnectButton component
@@ -75,6 +78,18 @@ export default function ClientApp() {
   const [referralCount, setReferralCount] = useState(0);
   const [referralInput, setReferralInput] = useState(""); // Untuk input kode referral
   const [referralSuccess, setReferralSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    key: number;
+  } | null>(null);
+
+  // State untuk riwayat notifikasi personal user
+  const [userNotifications, setUserNotifications] = useState<Array<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    time: string;
+  }>>([]);
 
   // Tambahkan efek agar activeTab berubah saat pathname berubah (SPA navigation)
   useEffect(() => {
@@ -180,10 +195,10 @@ export default function ClientApp() {
 
     const fetchBroadcasts = async () => {
       try {
-        const res = await fetch("/api/admin/broadcast");
+        const res = await fetch("/api/broadcast");
         if (!res.ok) return;
         const data = await res.json();
-        setBroadcasts(data.broadcasts || []);
+        setBroadcasts((data.broadcasts || []).map((b: { message: string } | string) => typeof b === 'string' ? b : b.message));
       } catch {}
     };
 
@@ -220,7 +235,6 @@ export default function ClientApp() {
         setErrorMessage("Please connect your wallet first");
         return;
       }
-
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: {
@@ -228,24 +242,29 @@ export default function ClientApp() {
         },
         body: JSON.stringify({ walletAddress, taskId: id }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.message || "Failed to complete task");
       }
-
-      // Update tasks state
       setTasks((prevTasks) =>
         prevTasks.map((task) =>
           task.id === id ? { ...task, completed: true } : task
         )
       );
+      setToast({ message: 'Task berhasil diselesaikan!', type: 'success', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Task berhasil diselesaikan!', type: 'success', time: new Date().toLocaleString() },
+        ...prev
+      ]);
     } catch (error: unknown) {
-      console.error("Error completing task:", error);
       setErrorMessage(
         error instanceof Error ? error.message : "An unknown error occurred"
       );
+      setToast({ message: 'Gagal menyelesaikan task', type: 'error', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Gagal menyelesaikan task', type: 'error', time: new Date().toLocaleString() },
+        ...prev
+      ]);
     }
   };
 
@@ -260,31 +279,42 @@ export default function ClientApp() {
         },
         body: JSON.stringify({ walletAddress }),
       });
-
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to check in");
       }
-
       const data = await res.json();
       if (data.success) {
         setCheckedIn(true);
         setLastCheckIn(data.date);
+        setToast({ message: 'Check-in berhasil!', type: 'success', key: Date.now() });
+        setUserNotifications((prev) => [
+          { message: 'Check-in berhasil!', type: 'success', time: new Date().toLocaleString() },
+          ...prev
+        ]);
       } else {
         setErrorMessage(
           data.message || "Check-in failed. Please try again later."
         );
+        setToast({ message: 'Check-in gagal', type: 'error', key: Date.now() });
+        setUserNotifications((prev) => [
+          { message: 'Check-in gagal', type: 'error', time: new Date().toLocaleString() },
+          ...prev
+        ]);
       }
     } catch (error: unknown) {
-      console.error("Error checking in:", error);
       setErrorMessage(error instanceof Error ? error.message : "Check-in failed. Please try again.");
+      setToast({ message: 'Check-in gagal', type: 'error', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Check-in gagal', type: 'error', time: new Date().toLocaleString() },
+        ...prev
+      ]);
     }
   };
 
   // Production-ready claim handler
   const handleClaim = async () => {
     if (!walletAddress) return;
-
     try {
       const response = await fetch("/api/claim", {
         method: "POST",
@@ -295,13 +325,29 @@ export default function ClientApp() {
           address: walletAddress,
         }),
       });
-
       const data = await response.json();
       if (!data.success) {
         setErrorMessage(data.message);
+        setToast({ message: 'Claim reward gagal', type: 'error', key: Date.now() });
+        setUserNotifications((prev) => [
+          { message: 'Claim reward gagal', type: 'error', time: new Date().toLocaleString() },
+          ...prev
+        ]);
+        return;
       }
+      setClaimed(true);
+      setToast({ message: 'Reward berhasil diklaim!', type: 'success', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Reward berhasil diklaim!', type: 'success', time: new Date().toLocaleString() },
+        ...prev
+      ]);
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : "Something went wrong");
+      setToast({ message: 'Claim reward gagal', type: 'error', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Claim reward gagal', type: 'error', time: new Date().toLocaleString() },
+        ...prev
+      ]);
     }
   };
 
@@ -353,12 +399,28 @@ export default function ClientApp() {
       const data = await res.json();
       if (data.success) {
         setReferralSuccess("Referral submitted!");
+        setToast({ message: 'Referral berhasil dikirim!', type: 'success', key: Date.now() });
+        setUserNotifications((prev) => [
+          { message: 'Referral berhasil dikirim!', type: 'success', time: new Date().toLocaleString() },
+          ...prev
+        ]);
+        setReferralInput(""); // reset input jika sukses
       } else {
         setReferralSuccess(data.message || "Failed to submit referral.");
+        setToast({ message: data.message || 'Referral gagal', type: 'error', key: Date.now() });
+        setUserNotifications((prev) => [
+          { message: data.message || 'Referral gagal', type: 'error', time: new Date().toLocaleString() },
+          ...prev
+        ]);
       }
       setTimeout(() => setReferralSuccess(null), 3000);
     } catch {
       setReferralSuccess("Failed to submit referral.");
+      setToast({ message: 'Referral gagal', type: 'error', key: Date.now() });
+      setUserNotifications((prev) => [
+        { message: 'Referral gagal', type: 'error', time: new Date().toLocaleString() },
+        ...prev
+      ]);
       setTimeout(() => setReferralSuccess(null), 3000);
     }
   };
@@ -377,6 +439,15 @@ export default function ClientApp() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {toast && (
+        <TaskNotification
+          key={toast.key}
+          message={toast.message}
+          type={toast.type}
+          duration={3000}
+          onClose={() => setToast(null)}
+        />
+      )}
       {errorMessage && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 max-w-md text-center">
           <p>{errorMessage}</p>
@@ -511,6 +582,23 @@ export default function ClientApp() {
                 <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
                   <span className="text-2xl">🛎️</span> Notification
                 </h2>
+                {/* Notifikasi personal user */}
+                {userNotifications.length > 0 && (
+                  <div className="mb-6">
+                    <div className="font-bold mb-2">Aktivitas Anda</div>
+                    <ul className="space-y-2 max-h-40 overflow-y-auto">
+                      {userNotifications.map((notif, idx) => (
+                        <li key={idx} className={`rounded-lg px-4 py-2 flex items-center gap-2 border ${notif.type === 'success' ? 'border-green-500/40 bg-green-500/10' : notif.type === 'error' ? 'border-red-500/40 bg-red-500/10' : 'border-blue-500/40 bg-blue-500/10'}`}>
+                          <span>{notif.type === 'success' ? '✅' : notif.type === 'error' ? '❌' : 'ℹ️'}</span>
+                          <span className="flex-1">{notif.message}</span>
+                          <span className="text-xs text-gray-400">{notif.time}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Notifikasi broadcast admin */}
+                <div className="font-bold mb-2">Broadcast Admin</div>
                 {broadcasts.length === 0 ? (
                   <div className="text-gray-400 text-sm">No notifications yet.</div>
                 ) : (
@@ -554,12 +642,30 @@ export default function ClientApp() {
                 <h2 className="text-lg font-bold mb-2">Tasks</h2>
                 <ul className="space-y-2">
                   {tasks.map(task => (
-                    <li key={task.id} className="flex items-center justify-between">
-                      <span>{task.title}</span>
+                    <li key={task.id} className="flex flex-row items-center justify-between gap-6 py-2">
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="font-semibold break-words">{task.title}</span>
+                        <span className="text-xs text-gray-400 break-words">{task.description}</span>
+                        {task.url && (
+                          <a
+                            href={task.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 underline text-xs mt-1 w-fit focus:outline focus:outline-2"
+                            tabIndex={0}
+                            role="button"
+                            style={{ pointerEvents: 'auto', zIndex: 2, display: 'inline-block' }}
+                          >
+                            {task.type === 'follow' ? 'Go to Follow' : task.type === 'share' ? 'Go to Share' : (task.url.includes('discord.gg') ? 'Go to Discord' : 'Go to Task')}
+                          </a>
+                        )}
+                      </div>
                       <button
-                        className={`px-2 py-1 rounded ${task.completed ? 'bg-green-600 text-white' : 'bg-[#FFC452] text-black'}`}
-                        onClick={() => completeTask(task.id)}
+                        className={`px-2 py-1 rounded shrink-0 ${task.completed ? 'bg-green-600 text-white' : 'bg-[#FFC452] text-black'}`}
+                        onClick={e => { e.stopPropagation(); completeTask(task.id); }}
                         disabled={task.completed}
+                        style={{ zIndex: 1 }}
+                        tabIndex={0}
                       >
                         {task.completed ? 'Completed' : 'Complete'}
                       </button>
@@ -585,6 +691,34 @@ export default function ClientApp() {
             {activeTab === "referral" && (
               <div className="bg-[#14192E] rounded-2xl p-4 mb-4">
                 <h2 className="text-lg font-bold mb-2">Referral</h2>
+                {/* Kode referral user */}
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="font-bold">Your Referral Code:</span>
+                  <span className="bg-[#232841] px-2 py-1 rounded text-xs select-all">{walletAddress || '-'}</span>
+                  {walletAddress && (
+                    <button
+                      className="px-2 py-1 bg-[#FFC452] text-black rounded text-xs font-bold"
+                      onClick={() => {
+                        navigator.clipboard.writeText(walletAddress);
+                        setToast({ message: 'Referral code copied!', type: 'success', key: Date.now() });
+                      }}
+                    >Copy</button>
+                  )}
+                </div>
+                {/* Link referral */}
+                {walletAddress && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="font-bold">Referral Link:</span>
+                    <span className="bg-[#232841] px-2 py-1 rounded text-xs select-all">{`https://airdrop.pepetubes.io/referral?code=${walletAddress}`}</span>
+                    <button
+                      className="px-2 py-1 bg-[#FFC452] text-black rounded text-xs font-bold"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`https://airdrop.pepetubes.io/referral?code=${walletAddress}`);
+                        setToast({ message: 'Referral link copied!', type: 'success', key: Date.now() });
+                      }}
+                    >Copy Link</button>
+                  </div>
+                )}
                 <div className="mb-2">Referral Count: <span className="font-bold">{referralCount}</span></div>
                 <input
                   type="text"

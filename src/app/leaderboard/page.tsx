@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
-import Image from "next/image";
 import { useLanguage } from "@/context/LanguageContext";
 
 interface LeaderboardEntry {
@@ -77,24 +76,11 @@ export default function LeaderboardPage() {
 
   const fetchLeaderboard = async () => {
     try {
-      // Simulasi fetch data
-      setTimeout(() => {
-        const mockData: LeaderboardEntry[] = [
-          { address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", points: 1450, rank: 1, avatar: "/avatar1.jpg" },
-          { address: "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4", points: 1380, rank: 2, avatar: "/avatar2.jpg" },
-          { address: "0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2", points: 1320, rank: 3, avatar: "/avatar3.jpg" },
-          { address: "0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db", points: 1290, rank: 4 },
-          { address: "0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB", points: 1240, rank: 5 },
-          { address: "0x617F2E2fD72FD9D5503197092aC168c91465E7f2", points: 1220, rank: 6 },
-          { address: "0x17F6AD8Ef982297579C203069C1DbfFE4348c372", points: 1190, rank: 7 },
-          { address: "0x5c6B0f7Bf3E7ce046039Bd8FABdfD3f9F5021678", points: 1180, rank: 8 },
-          { address: "0x03C6FcED478cBbC9a4FAB34eF9f40767739D1Ff7", points: 1160, rank: 9 },
-          { address: "0x1aE0EA34a72D944a8C7603FfB3eC30a6669E454C", points: 1140, rank: 10 },
-        ];
-        
-        setLeaderboard(mockData);
-        setLoading(false);
-      }, 1000);
+      const res = await fetch("/api/leaderboard");
+      if (!res.ok) throw new Error("Failed to fetch leaderboard");
+      const data = await res.json();
+      setLeaderboard(data.leaderboard || []);
+      setLoading(false);
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : "Failed to load leaderboard";
       setError(errorMessage);
